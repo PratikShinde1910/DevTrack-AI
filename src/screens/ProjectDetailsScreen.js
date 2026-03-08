@@ -2,11 +2,13 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useState } from 'react';
-import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Linking, Modal, Platform, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Image, KeyboardAvoidingView, Linking, Modal, Platform, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { useSnackbar } from '../context/SnackbarContext';
 import api from '../services/api';
 import { COLORS, GRADIENTS } from '../utils/constants';
 
 const ProjectDetailsScreen = ({ route, navigation }) => {
+    const { showSnackbar } = useSnackbar();
     // The project object is passed from ProjectsScreen via navigation route params
     const { project } = route.params;
 
@@ -26,7 +28,8 @@ const ProjectDetailsScreen = ({ route, navigation }) => {
 
     const [editName, setEditName] = useState(name);
     const [editDescription, setEditDescription] = useState(description);
-    const [editTechStack, setEditTechStack] = useState(techStack ? techStack.join(', ') : '');
+    const [editTechStack, setEditTechStack] = useState(techStack || []);
+    const [techInput, setTechInput] = useState('');
     const [editProgress, setEditProgress] = useState(progress ? progress.toString() : '0');
     const [editNotes, setEditNotes] = useState(notes ? notes.join('\n') : '');
     const [editIcon, setEditIcon] = useState(iconUrl);
@@ -44,9 +47,22 @@ const ProjectDetailsScreen = ({ route, navigation }) => {
         }
     };
 
+    const addTech = () => {
+        if (techInput.trim()) {
+            if (!editTechStack.includes(techInput.trim())) {
+                setEditTechStack([...editTechStack, techInput.trim()]);
+            }
+            setTechInput('');
+        }
+    };
+
+    const removeTech = (tech) => {
+        setEditTechStack(editTechStack.filter(t => t !== tech));
+    };
+
     const handleUpdateProject = async () => {
         if (!editName.trim()) {
-            Alert.alert('Error', 'Project Name is required');
+            showSnackbar('Project Name is required', 'error');
             return;
         }
 
@@ -55,7 +71,7 @@ const ProjectDetailsScreen = ({ route, navigation }) => {
             const formData = new FormData();
             formData.append('name', editName.trim());
             formData.append('description', editDescription.trim());
-            formData.append('techStack', JSON.stringify(editTechStack.split(',').map(t => t.trim()).filter(Boolean)));
+            formData.append('techStack', JSON.stringify(editTechStack));
             formData.append('progress', parseInt(editProgress, 10) || 0);
 
             // Clean up notes
@@ -78,11 +94,11 @@ const ProjectDetailsScreen = ({ route, navigation }) => {
                 headers: { 'Content-Type': 'multipart/form-data' },
             });
 
-            Alert.alert('Success', 'Project updated successfully!');
+            showSnackbar('Project updated successfully!', 'success');
             setLocalProject(response.data);
             setModalVisible(false);
         } catch (error) {
-            Alert.alert('Error', error.response?.data?.message || 'Failed to update project');
+            showSnackbar(error.response?.data?.message || 'Failed to update project', 'error');
         } finally {
             setUpdating(false);
         }
@@ -90,7 +106,7 @@ const ProjectDetailsScreen = ({ route, navigation }) => {
 
     const handleAddNote = async () => {
         if (!newNote.trim()) {
-            Alert.alert('Error', 'Please enter a note');
+            showSnackbar('Please enter a note', 'error');
             return;
         }
 
@@ -112,14 +128,14 @@ const ProjectDetailsScreen = ({ route, navigation }) => {
                 headers: { 'Content-Type': 'multipart/form-data' },
             });
 
-            Alert.alert('Success', 'Note added!');
+            showSnackbar('Note added!', 'success');
             setLocalProject(response.data);
 
             // Reset state
             setAddNoteVisible(false);
             setNewNote('');
         } catch (error) {
-            Alert.alert('Error', error.response?.data?.message || 'Failed to add note');
+            showSnackbar(error.response?.data?.message || 'Failed to add note', 'error');
         } finally {
             setAddingNote(false);
         }
@@ -348,8 +364,46 @@ const ProjectDetailsScreen = ({ route, navigation }) => {
                                 </View>
 
                                 <View style={styles.inputGroup}>
-                                    <Text style={styles.inputLabel}>Tech Stack (comma separated)</Text>
-                                    <TextInput style={styles.input} placeholderTextColor={COLORS.textMuted} value={editTechStack} onChangeText={setEditTechStack} />
+                                    <Text style={styles.inputLabel}>Tech Stack</Text>
+                                    <View style={styles.techInputContainer}>
+                                        <TextInput
+                                            style={[styles.input, { flex: 1, borderTopRightRadius: 0, borderBottomRightRadius: 0 }]}
+                                            placeholderTextColor={COLORS.textMuted}
+                                            placeholder="e.g. React Native"
+                                            value={techInput}
+                                            onChangeText={setTechInput}
+                                            onSubmitEditing={addTech}
+                                        />
+                                        <TouchableOpacity onPress={addTech} style={styles.addTechBtn}>
+                                            <LinearGradient
+                                                colors={GRADIENTS.primary}
+                                                style={styles.addTechGradient}
+                                                start={{ x: 0, y: 0 }}
+                                                end={{ x: 1, y: 1 }}
+                                            >
+                                                <Text style={styles.addTechText}>+</Text>
+                                            </LinearGradient>
+                                        </TouchableOpacity>
+                                    </View>
+                                    {editTechStack.length > 0 && (
+                                        <View style={styles.chipsContainer}>
+                                            {editTechStack.map((tech, index) => (
+                                                <TouchableOpacity
+                                                    key={index}
+                                                    style={styles.chip}
+                                                    onPress={() => removeTech(tech)}
+                                                >
+                                                    <LinearGradient
+                                                        colors={['rgba(108, 99, 255, 0.2)', 'rgba(90, 82, 213, 0.1)']}
+                                                        style={styles.chipGradient}
+                                                    >
+                                                        <Text style={styles.chipText}>{tech}</Text>
+                                                        <Text style={styles.chipClose}>✕</Text>
+                                                    </LinearGradient>
+                                                </TouchableOpacity>
+                                            ))}
+                                        </View>
+                                    )}
                                 </View>
 
                                 <View style={styles.rowInputs}>
@@ -576,6 +630,15 @@ const styles = StyleSheet.create({
     rowInputs: { flexDirection: 'row', justifyContent: 'space-between' },
     inputLabel: { fontSize: 13, color: COLORS.textSecondary, marginBottom: 8, fontWeight: '600' },
     input: { backgroundColor: COLORS.inputBg, borderWidth: 1, borderColor: COLORS.inputBorder, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 14, color: COLORS.text, fontSize: 15 },
+    techInputContainer: { flexDirection: 'row', alignItems: 'center' },
+    addTechBtn: { height: 48, width: 48, marginLeft: -1 },
+    addTechGradient: { flex: 1, borderTopRightRadius: 12, borderBottomRightRadius: 12, justifyContent: 'center', alignItems: 'center' },
+    addTechText: { color: COLORS.text, fontSize: 24, fontWeight: '300' },
+    chipsContainer: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 12 },
+    chip: { marginRight: 8, marginBottom: 8, borderRadius: 8, overflow: 'hidden' },
+    chipGradient: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, borderColor: 'rgba(108, 99, 255, 0.3)', borderRadius: 8 },
+    chipText: { color: COLORS.text, fontSize: 12, fontWeight: '600' },
+    chipClose: { color: COLORS.textMuted, fontSize: 12, marginLeft: 8, fontWeight: 'bold' },
     updateBtn: { borderRadius: 12, paddingVertical: 16, alignItems: 'center', marginTop: 16, shadowColor: COLORS.accent, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 4 },
     updateBtnText: { color: COLORS.dark, fontSize: 17, fontWeight: '700', letterSpacing: 0.5 },
     modalActions: { flexDirection: 'row', alignItems: 'center', marginTop: 24 },

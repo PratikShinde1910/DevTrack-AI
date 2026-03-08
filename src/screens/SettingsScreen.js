@@ -1,29 +1,59 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Linking, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useState } from 'react';
+import { ActivityIndicator, Modal, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useAuth } from '../context/AuthContext';
+import { useSnackbar } from '../context/SnackbarContext';
+import api from '../services/api';
 import { COLORS, GRADIENTS } from '../utils/constants';
 
-const SettingsScreen = () => {
-    const { user, logout } = useAuth(); // Assume user object has { name, email }
+const SettingsScreen = ({ navigation }) => {
+    const { user, logout } = useAuth();
+    const { showSnackbar } = useSnackbar();
 
-    // Fallback if user data is missing
+    // Activity Summary Modal State
+    const [summaryVisible, setSummaryVisible] = useState(false);
+    const [summaryLoading, setSummaryLoading] = useState(false);
+    const [summaryData, setSummaryData] = useState(null);
+
     const userName = user?.name || 'Developer';
     const userEmail = user?.email || 'developer@devtrack.ai';
 
-    const handleLinkPress = (url) => {
-        Linking.openURL(url).catch(err => console.error("Couldn't open link", err));
+    const handleOpenActivitySummary = async () => {
+        setSummaryVisible(true);
+        if (summaryData) return; // Don't refetch if we already have it temporarily
+
+        setSummaryLoading(true);
+        try {
+            const response = await api.get('/progress/stats');
+            setSummaryData({
+                totalSessions: response.data.totalSessions || 0,
+                streak: response.data.streak || 0,
+                longestStreak: response.data.longestStreak || 0,
+                totalHours: response.data.totalHours || 0,
+                projectsLogged: response.data.projectsLogged || 0,
+            });
+        } catch (error) {
+            console.error('Error fetching activity summary:', error);
+            showSnackbar('Failed to load activity summary.', 'error');
+            setSummaryVisible(false);
+        } finally {
+            setSummaryLoading(false);
+        }
     };
 
-    const SettingRow = ({ icon, label, destructive = false, onPress }) => (
-        <TouchableOpacity style={styles.settingRow} onPress={onPress}>
+    const SettingRow = ({ icon, label, destructive = false, onPress, value }) => (
+        <TouchableOpacity style={styles.settingRow} onPress={onPress} disabled={!onPress}>
             <View style={styles.settingRowLeft}>
                 <View style={[styles.iconContainer, destructive && { backgroundColor: 'rgba(255, 69, 58, 0.15)' }]}>
                     <Ionicons name={icon} size={20} color={destructive ? COLORS.error : COLORS.primary} />
                 </View>
                 <Text style={[styles.settingLabel, destructive && { color: COLORS.error }]}>{label}</Text>
             </View>
-            <Ionicons name="chevron-forward" size={20} color={COLORS.textMuted} />
+            <View style={styles.settingRowRight}>
+                {value && <Text style={styles.settingValueText}>{value}</Text>}
+                {onPress && <Ionicons name="chevron-forward" size={20} color={COLORS.textMuted} />}
+            </View>
         </TouchableOpacity>
     );
 
@@ -38,55 +68,147 @@ const SettingsScreen = () => {
 
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
 
-                {/* Profile Header Card */}
-                <View style={styles.profileCard}>
+                {/* 1. User Info Header */}
+                <View style={styles.headerProfileSection}>
                     <View style={styles.avatarPlaceholder}>
                         <Text style={styles.avatarText}>{userName.charAt(0).toUpperCase()}</Text>
                     </View>
-                    <View style={styles.profileInfo}>
-                        <Text style={styles.profileName}>{userName}</Text>
-                        <Text style={styles.profileEmail}>{userEmail}</Text>
+                    <Text style={styles.headerUserName}>{userName}</Text>
+                </View>
+
+                {/* 2. Profile Controls Section */}
+                <View style={styles.sectionContainer}>
+                    <View style={styles.cardGroup}>
+                        <SettingRow
+                            icon="person-outline"
+                            label="Edit Profile"
+                            onPress={() => navigation.navigate('EditProfile')}
+                        />
                     </View>
-                    <TouchableOpacity style={styles.editBtn}>
-                        <Text style={styles.editBtnText}>Edit</Text>
+                </View>
+
+                {/* 2. Activity Section */}
+                <View style={styles.sectionContainer}>
+                    <View style={styles.cardGroup}>
+                        <SettingRow
+                            icon="stats-chart-outline"
+                            label="Activity Summary"
+                            onPress={handleOpenActivitySummary}
+                        />
+                        <View style={styles.divider} />
+                        <SettingRow
+                            icon="cellular-outline"
+                            label="Progress Heatmap"
+                            onPress={() => navigation.navigate('Progress')}
+                        />
+                    </View>
+                </View>
+
+                {/* 4. Preferences Section */}
+                <View style={styles.sectionContainer}>
+                    <View style={styles.cardGroup}>
+                        <SettingRow
+                            icon="moon-outline"
+                            label="Dark Mode"
+                            onPress={() => showSnackbar('Dark Mode setting coming soon in a future update!', 'success')}
+                        />
+                        <View style={styles.divider} />
+                        <SettingRow
+                            icon="notifications-outline"
+                            label="Notifications"
+                            onPress={() => showSnackbar('Notification settings coming soon in a future update!', 'success')}
+                        />
+                        <View style={styles.divider} />
+                        <SettingRow
+                            icon="language-outline"
+                            label="Language"
+                            onPress={() => showSnackbar('Language settings coming soon in a future update!', 'success')}
+                        />
+                    </View>
+                </View>
+
+                {/* 5. Information Section */}
+                <View style={styles.sectionContainer}>
+                    <View style={styles.cardGroup}>
+                        <SettingRow
+                            icon="shield-checkmark-outline"
+                            label="Privacy Policy"
+                            onPress={() => navigation.navigate('PrivacyPolicy')}
+                        />
+                        <View style={styles.divider} />
+                        <SettingRow
+                            icon="information-circle-outline"
+                            label="App Origin"
+                            onPress={() => navigation.navigate('AppOrigin')}
+                        />
+                    </View>
+                </View>
+
+                {/* 6. Logout Button */}
+                <View style={[styles.sectionContainer, styles.logoutContainer]}>
+                    <TouchableOpacity style={styles.logoutBtn} onPress={logout}>
+                        <Ionicons name="log-out-outline" size={20} color="#FF453A" style={{ marginRight: 8 }} />
+                        <Text style={styles.logoutBtnText}>Logout</Text>
                     </TouchableOpacity>
                 </View>
 
-                {/* Section: General Settings */}
-                <View style={styles.sectionContainer}>
-                    <Text style={styles.sectionTitle}>General Settings</Text>
-                    <View style={styles.cardGroup}>
-                        <SettingRow icon="person-outline" label="Account" />
-                        <View style={styles.divider} />
-                        <SettingRow icon="color-palette-outline" label="Appearance" />
-                        <View style={styles.divider} />
-                        <SettingRow icon="language-outline" label="Language" />
-                        <View style={styles.divider} />
-                        <SettingRow icon="notifications-outline" label="Notifications" />
-                    </View>
-                </View>
+                {/* Activity Summary Modal */}
+                <Modal visible={summaryVisible} transparent animationType="fade" onRequestClose={() => setSummaryVisible(false)}>
+                    <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setSummaryVisible(false)}>
+                        <TouchableOpacity style={styles.summaryModalContent} activeOpacity={1}>
+                            <View style={styles.summaryModalHeader}>
+                                <Text style={styles.summaryModalTitle}>Activity Summary</Text>
+                                <TouchableOpacity onPress={() => setSummaryVisible(false)} style={styles.closeBtn}>
+                                    <Ionicons name="close" size={24} color={COLORS.textMuted} />
+                                </TouchableOpacity>
+                            </View>
 
-                {/* Section: App Information */}
-                <View style={styles.sectionContainer}>
-                    <Text style={styles.sectionTitle}>App Information</Text>
-                    <View style={styles.cardGroup}>
-                        <SettingRow icon="shield-checkmark-outline" label="Privacy Policy" onPress={() => handleLinkPress('https://devtrack.ai/privacy')} />
-                        <View style={styles.divider} />
-                        <SettingRow icon="document-text-outline" label="Terms & Conditions" onPress={() => handleLinkPress('https://devtrack.ai/terms')} />
-                        <View style={styles.divider} />
-                        <SettingRow icon="information-circle-outline" label="About DevTrack AI" />
-                        <View style={styles.divider} />
-                        <SettingRow icon="star-outline" label="Rate the App" />
-                        <View style={styles.divider} />
-                        <SettingRow icon="share-social-outline" label="Share App" />
-                    </View>
-                </View>
-
-                {/* Logout Button */}
-                <TouchableOpacity style={styles.logoutBtn} onPress={logout}>
-                    <Ionicons name="log-out-outline" size={20} color="#FF453A" style={{ marginRight: 8 }} />
-                    <Text style={styles.logoutBtnText}>Logout</Text>
-                </TouchableOpacity>
+                            {summaryLoading ? (
+                                <View style={styles.summaryLoadingContainer}>
+                                    <ActivityIndicator size="large" color={COLORS.primary} />
+                                </View>
+                            ) : summaryData ? (
+                                <View style={styles.summaryStatsContainer}>
+                                    <View style={styles.summaryStatRow}>
+                                        <View style={styles.summaryStatLeft}>
+                                            <Text style={styles.summaryStatEmoji}>🔥</Text>
+                                            <Text style={styles.summaryStatLabel}>Current Streak</Text>
+                                        </View>
+                                        <Text style={styles.summaryStatValue}>{summaryData.streak} days</Text>
+                                    </View>
+                                    <View style={styles.summaryStatRow}>
+                                        <View style={styles.summaryStatLeft}>
+                                            <Text style={styles.summaryStatEmoji}>🏆</Text>
+                                            <Text style={styles.summaryStatLabel}>Longest Streak</Text>
+                                        </View>
+                                        <Text style={styles.summaryStatValue}>{summaryData.longestStreak} days</Text>
+                                    </View>
+                                    <View style={styles.summaryStatRow}>
+                                        <View style={styles.summaryStatLeft}>
+                                            <Text style={styles.summaryStatEmoji}>⏱</Text>
+                                            <Text style={styles.summaryStatLabel}>Total Coding Time</Text>
+                                        </View>
+                                        <Text style={styles.summaryStatValue}>{summaryData.totalHours} hours</Text>
+                                    </View>
+                                    <View style={styles.summaryStatRow}>
+                                        <View style={styles.summaryStatLeft}>
+                                            <Text style={styles.summaryStatEmoji}>📊</Text>
+                                            <Text style={styles.summaryStatLabel}>Total Sessions</Text>
+                                        </View>
+                                        <Text style={styles.summaryStatValue}>{summaryData.totalSessions}</Text>
+                                    </View>
+                                    <View style={styles.summaryStatRow}>
+                                        <View style={styles.summaryStatLeft}>
+                                            <Text style={styles.summaryStatEmoji}>🚀</Text>
+                                            <Text style={styles.summaryStatLabel}>Projects Logged</Text>
+                                        </View>
+                                        <Text style={styles.summaryStatValue}>{summaryData.projectsLogged}</Text>
+                                    </View>
+                                </View>
+                            ) : null}
+                        </TouchableOpacity>
+                    </TouchableOpacity>
+                </Modal>
 
                 <View style={{ height: 40 }} />
             </ScrollView>
@@ -113,55 +235,37 @@ const styles = StyleSheet.create({
         paddingHorizontal: 16,
         paddingBottom: 40,
     },
-    profileCard: {
-        flexDirection: 'row',
+    headerProfileSection: {
         alignItems: 'center',
-        backgroundColor: 'rgba(255, 255, 255, 0.05)',
-        borderRadius: 20,
-        padding: 20,
-        marginBottom: 24,
-        borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.1)',
+        marginBottom: 32,
+        marginTop: 8,
     },
     avatarPlaceholder: {
-        width: 60,
-        height: 60,
-        borderRadius: 30,
+        width: 80,
+        height: 80,
+        borderRadius: 40,
         backgroundColor: 'rgba(108, 99, 255, 0.2)',
         justifyContent: 'center',
         alignItems: 'center',
-        borderWidth: 1,
+        borderWidth: 2,
         borderColor: COLORS.primary,
-        marginRight: 16,
+        marginBottom: 16,
     },
     avatarText: {
-        fontSize: 24,
+        fontSize: 32,
         fontWeight: '800',
         color: COLORS.primary,
     },
-    profileInfo: {
-        flex: 1,
-    },
-    profileName: {
-        fontSize: 18,
+    headerUserName: {
+        fontSize: 22,
         fontWeight: '800',
         color: COLORS.text,
-        marginBottom: 4,
+        marginBottom: 6,
     },
-    profileEmail: {
-        fontSize: 13,
-        color: COLORS.textSecondary,
-    },
-    editBtn: {
-        backgroundColor: 'rgba(255, 255, 255, 0.1)',
-        paddingHorizontal: 16,
-        paddingVertical: 8,
-        borderRadius: 20,
-    },
-    editBtnText: {
-        fontSize: 13,
-        fontWeight: '700',
-        color: COLORS.text,
+    headerUserEmail: {
+        fontSize: 14,
+        color: COLORS.primary,
+        textDecorationLine: 'underline',
     },
     sectionContainer: {
         marginBottom: 24,
@@ -193,6 +297,10 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
     },
+    settingRowRight: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
     iconContainer: {
         width: 36,
         height: 36,
@@ -207,10 +315,18 @@ const styles = StyleSheet.create({
         fontWeight: '600',
         color: COLORS.text,
     },
+    settingValueText: {
+        fontSize: 14,
+        color: COLORS.textMuted,
+        marginRight: 8,
+    },
     divider: {
         height: 1,
         backgroundColor: 'rgba(255, 255, 255, 0.04)',
         marginLeft: 66, // Align line perfectly with text
+    },
+    logoutContainer: {
+        marginTop: 8,
     },
     logoutBtn: {
         flexDirection: 'row',
@@ -221,13 +337,77 @@ const styles = StyleSheet.create({
         borderRadius: 16,
         borderWidth: 1,
         borderColor: 'rgba(255, 69, 58, 0.3)',
-        marginTop: 16,
     },
     logoutBtnText: {
         fontSize: 17,
         fontWeight: '700',
         color: '#FF453A',
         letterSpacing: 0.5,
+    },
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.7)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    summaryModalContent: {
+        width: '85%',
+        backgroundColor: COLORS.darkLight,
+        borderRadius: 24,
+        padding: 24,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.1)',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.5,
+        shadowRadius: 20,
+        elevation: 10,
+    },
+    summaryModalHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 24,
+    },
+    summaryModalTitle: {
+        fontSize: 20,
+        fontWeight: '800',
+        color: COLORS.text,
+    },
+    closeBtn: {
+        padding: 4,
+    },
+    summaryLoadingContainer: {
+        minHeight: 150,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    summaryStatsContainer: {
+        gap: 16,
+    },
+    summaryStatRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingVertical: 8,
+    },
+    summaryStatLeft: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    summaryStatEmoji: {
+        fontSize: 20,
+        marginRight: 12,
+    },
+    summaryStatLabel: {
+        fontSize: 15,
+        color: COLORS.textSecondary,
+        fontWeight: '500',
+    },
+    summaryStatValue: {
+        fontSize: 15,
+        color: COLORS.text,
+        fontWeight: '700',
     },
 });
 

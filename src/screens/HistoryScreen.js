@@ -157,6 +157,7 @@ const HistoryScreen = ({ navigation }) => {
                         problems={item.problemsSolved}
                         tech={item.techLearned}
                         dateLabel={formatDateLabel(item.date || item.createdAt)}
+                        devLog={item.devLog}
                     />
                 )}
                 renderHiddenItem={({ item }) => (

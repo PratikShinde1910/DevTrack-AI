@@ -1,16 +1,23 @@
 import { Ionicons } from '@expo/vector-icons';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { useEffect } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { useAuth } from '../context/AuthContext';
 import AddProgressScreen from '../screens/AddProgressScreen';
+import CreateNewPasswordScreen from '../screens/CreateNewPasswordScreen';
 import DashboardScreen from '../screens/DashboardScreen';
+import FocusTimerScreen from '../screens/FocusTimerScreen';
 import HistoryScreen from '../screens/HistoryScreen';
 import LoginScreen from '../screens/LoginScreen';
+import ProgressScreen from '../screens/ProgressScreen';
 import ProjectDetailsScreen from '../screens/ProjectDetailsScreen';
 import ProjectsScreen from '../screens/ProjectsScreen';
 import RegisterScreen from '../screens/RegisterScreen';
+import ResetPasswordScreen from '../screens/ResetPasswordScreen';
 import SettingsScreen from '../screens/SettingsScreen';
+import VerifyOtpScreen from '../screens/VerifyOtpScreen';
+import authEvents, { AUTH_LOGOUT } from '../utils/authEvents';
 import { COLORS } from '../utils/constants';
 
 const styles = StyleSheet.create({
@@ -134,8 +141,15 @@ const AuthStack = () => (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
         <Stack.Screen name="Login" component={LoginScreen} />
         <Stack.Screen name="Register" component={RegisterScreen} />
+        <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} />
+        <Stack.Screen name="VerifyOtp" component={VerifyOtpScreen} />
+        <Stack.Screen name="CreateNewPassword" component={CreateNewPasswordScreen} />
     </Stack.Navigator>
 );
+
+import AppOriginScreen from '../screens/AppOriginScreen';
+import EditProfileScreen from '../screens/EditProfileScreen';
+import PrivacyPolicyScreen from '../screens/PrivacyPolicyScreen';
 
 // App Stack (after login)
 const AppStack = () => (
@@ -146,11 +160,44 @@ const AppStack = () => (
             component={AddProgressScreen}
             options={{ presentation: 'modal' }}
         />
+        <Stack.Screen
+            name="FocusTimer"
+            component={FocusTimerScreen}
+            options={{ presentation: 'fullScreenModal' }}
+        />
+        <Stack.Screen
+            name="Progress"
+            component={ProgressScreen}
+        />
+        <Stack.Screen
+            name="EditProfile"
+            component={EditProfileScreen}
+            options={{ presentation: 'card' }}
+        />
+        <Stack.Screen
+            name="PrivacyPolicy"
+            component={PrivacyPolicyScreen}
+            options={{ presentation: 'card' }}
+        />
+        <Stack.Screen
+            name="AppOrigin"
+            component={AppOriginScreen}
+            options={{ presentation: 'card' }}
+        />
     </Stack.Navigator>
 );
 
 const AppNavigator = () => {
-    const { isAuthenticated, loading } = useAuth();
+    const { isAuthenticated, loading, logout } = useAuth();
+
+    useEffect(() => {
+        const unsubscribe = authEvents.on(AUTH_LOGOUT, () => {
+            logout();
+        });
+        return () => {
+            authEvents.off(AUTH_LOGOUT, unsubscribe);
+        };
+    }, []);
 
     if (loading) {
         return (

@@ -7,6 +7,9 @@ const authRoutes = require('./routes/auth');
 const progressRoutes = require('./routes/progress');
 const projectRoutes = require('./routes/projects');
 const taskRoutes = require('./routes/tasks');
+const focusRoutes = require('./routes/focus');
+const insightsRoutes = require('./routes/insights');
+const usersRoutes = require('./routes/users');
 
 const app = express();
 
@@ -19,6 +22,9 @@ app.use('/auth', authRoutes);
 app.use('/progress', progressRoutes);
 app.use('/projects', projectRoutes);
 app.use('/tasks', taskRoutes);
+app.use('/api/focus', focusRoutes);
+app.use('/api/insights', insightsRoutes);
+app.use('/api/users', usersRoutes);
 
 // Health check
 app.get('/', (req, res) => {

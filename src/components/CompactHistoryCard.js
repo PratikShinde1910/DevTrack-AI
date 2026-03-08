@@ -1,7 +1,7 @@
 import { StyleSheet, Text, View } from 'react-native';
 import { COLORS } from '../utils/constants';
 
-const CompactHistoryCard = ({ hours, problems, tech, dateLabel }) => {
+const CompactHistoryCard = ({ hours, problems, tech, dateLabel, devLog }) => {
     return (
         <View style={styles.card}>
             <View style={styles.header}>
@@ -27,6 +27,13 @@ const CompactHistoryCard = ({ hours, problems, tech, dateLabel }) => {
                         <Text style={styles.techText} numberOfLines={1}>{tech}</Text>
                     </View>
                 )}
+
+                {devLog ? (
+                    <View style={styles.devLogContainer}>
+                        <Text style={styles.devLogTitle}>Dev Log</Text>
+                        <Text style={styles.devLogText}>{devLog}</Text>
+                    </View>
+                ) : null}
             </View>
         </View>
     );
@@ -94,6 +101,25 @@ const styles = StyleSheet.create({
         color: COLORS.accent,
         fontWeight: '700',
         flex: 1,
+    },
+    devLogContainer: {
+        marginTop: 12,
+        paddingTop: 12,
+        borderTopWidth: 1,
+        borderTopColor: 'rgba(255, 255, 255, 0.05)',
+    },
+    devLogTitle: {
+        fontSize: 12,
+        color: COLORS.textMuted,
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
+        marginBottom: 4,
+        fontWeight: '700',
+    },
+    devLogText: {
+        fontSize: 14,
+        color: COLORS.textSecondary,
+        lineHeight: 20,
     },
 });
 

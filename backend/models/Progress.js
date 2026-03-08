@@ -27,11 +27,10 @@ const progressSchema = new mongoose.Schema({
         min: [0, 'Problems solved cannot be negative'],
     },
     techLearned: {
-        type: String,
-        trim: true,
-        default: '',
+        type: [String],
+        default: [],
     },
-    notes: {
+    devLog: {
         type: String,
         trim: true,
         default: '',

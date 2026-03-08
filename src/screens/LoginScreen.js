@@ -1,3 +1,4 @@
+import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useState } from 'react';
 import {
@@ -18,6 +19,7 @@ import { COLORS, GRADIENTS } from '../utils/constants';
 const LoginScreen = ({ navigation }) => {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
+    const [showPassword, setShowPassword] = useState(false);
     const [loading, setLoading] = useState(false);
     const { login } = useAuth();
 
@@ -71,15 +73,36 @@ const LoginScreen = ({ navigation }) => {
 
                         <View style={styles.inputContainer}>
                             <Text style={styles.inputLabel}>Password</Text>
-                            <TextInput
-                                style={styles.input}
-                                placeholder="Enter your password"
-                                placeholderTextColor={COLORS.textMuted}
-                                value={password}
-                                onChangeText={setPassword}
-                                secureTextEntry
-                            />
+                            <View style={styles.passwordContainer}>
+                                <TextInput
+                                    style={[styles.input, styles.passwordInput]}
+                                    placeholder="Enter your password"
+                                    placeholderTextColor={COLORS.textMuted}
+                                    value={password}
+                                    onChangeText={setPassword}
+                                    secureTextEntry={!showPassword}
+                                />
+                                <TouchableOpacity
+                                    style={styles.visibilityToggle}
+                                    onPress={() => setShowPassword(!showPassword)}
+                                    activeOpacity={0.7}
+                                >
+                                    <Ionicons
+                                        name={showPassword ? "eye-off" : "eye"}
+                                        size={22}
+                                        color={COLORS.textMuted}
+                                    />
+                                </TouchableOpacity>
+                            </View>
                         </View>
+
+                        <TouchableOpacity
+                            style={styles.forgotPasswordLink}
+                            onPress={() => navigation.navigate('ResetPassword')}
+                            activeOpacity={0.7}
+                        >
+                            <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
+                        </TouchableOpacity>
 
                         <TouchableOpacity
                             onPress={handleLogin}
@@ -181,6 +204,19 @@ const styles = StyleSheet.create({
         color: COLORS.text,
         fontSize: 15,
     },
+    passwordContainer: {
+        position: 'relative',
+        justifyContent: 'center',
+    },
+    passwordInput: {
+        paddingRight: 50,
+    },
+    visibilityToggle: {
+        position: 'absolute',
+        right: 16,
+        height: '100%',
+        justifyContent: 'center',
+    },
     loginButton: {
         borderRadius: 12,
         paddingVertical: 16,
@@ -209,6 +245,16 @@ const styles = StyleSheet.create({
     registerTextBold: {
         color: COLORS.primary,
         fontWeight: '700',
+    },
+    forgotPasswordLink: {
+        alignSelf: 'flex-end',
+        marginBottom: 20,
+        marginTop: 4,
+    },
+    forgotPasswordText: {
+        color: COLORS.primary,
+        fontSize: 14,
+        fontWeight: '600',
     },
 });
 

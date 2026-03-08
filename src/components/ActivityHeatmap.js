@@ -1,95 +1,131 @@
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { Animated, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { COLORS } from '../utils/constants';
 
-// Render a simple horizontal 7-day contribution block instead of external heatmap dependencies
-const ActivityHeatmap = ({ weeklyData = [] }) => {
-    // Generate an array of 7 days, mapping data appropriately
-    // Fallback block generation if array is empty
+const styles = StyleSheet.create({
+    container: {
+        backgroundColor: 'rgba(26, 30, 50, 0.6)',
+        borderRadius: 20,
+        paddingVertical: 20,
+        paddingHorizontal: 16,
+        marginBottom: 20,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.06)',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.25,
+        shadowRadius: 10,
+        elevation: 6,
+    },
+    content: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        width: '100%',
+    },
+    dayContainer: {
+        alignItems: 'center',
+        flex: 1,
+    },
+    dayText: {
+        fontSize: 11,
+        color: COLORS.textMuted,
+        marginBottom: 10,
+        fontWeight: '600',
+    },
+    block: {
+        width: 34,
+        height: 34,
+        borderRadius: 8,
+    },
+    blockSelected: {
+        borderWidth: 2,
+        borderColor: COLORS.accent,
+        shadowColor: COLORS.accent,
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0.6,
+        shadowRadius: 8,
+        elevation: 8,
+    },
+    dayTextSelected: {
+        color: COLORS.primary,
+        fontWeight: '800',
+    }
+});
+
+const AnimatedDayBlock = ({ block, onSelectDay }) => {
+    const scaleAnim = useRef(new Animated.Value(block.isSelected ? 1.08 : 1)).current;
+
+    useEffect(() => {
+        Animated.spring(scaleAnim, {
+            toValue: block.isSelected ? 1.08 : 1,
+            useNativeDriver: true,
+            friction: 6,
+            tension: 40,
+        }).start();
+    }, [block.isSelected, scaleAnim]);
+
+    return (
+        <TouchableOpacity
+            style={styles.dayContainer}
+            activeOpacity={0.7}
+            onPress={() => {
+                if (block.date && onSelectDay) {
+                    onSelectDay(block.date, block.dayLabel);
+                }
+            }}
+        >
+            <Text style={[styles.dayText, block.isSelected && styles.dayTextSelected]}>
+                {block.dayLabel}
+            </Text>
+            <Animated.View style={[
+                styles.block,
+                {
+                    backgroundColor: block.color,
+                    transform: [{ scale: scaleAnim }],
+                },
+                block.isSelected && styles.blockSelected
+            ]} />
+        </TouchableOpacity>
+    );
+};
+
+const ActivityHeatmap = ({ weeklyData = [], selectedDate, onSelectDay }) => {
     const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
-    // Placeholder data or matched data
     const blocks = days.map((day, index) => {
-        // Find existing data or default to 0 hours
-        const existingData = weeklyData.find((d) => d.day === day) || { hours: 0 };
+        const existingData = weeklyData.find((d) => d.day === day) || { hours: 0, date: null };
 
-        // Determine color level based on hours
-        let blockColor = 'rgba(255, 255, 255, 0.05)'; // Default Gray
-        if (existingData.hours > 0 && existingData.hours <= 2) {
-            blockColor = '#a3e4d7'; // Light green (1-2h)
-        } else if (existingData.hours > 2 && existingData.hours <= 4) {
-            blockColor = '#48c9b0'; // Medium green (3-4h)
-        } else if (existingData.hours >= 5) {
-            blockColor = '#117a65'; // Dark green (5h+)
+        let blockColor = 'rgba(255, 255, 255, 0.05)';
+        if (existingData.hours > 0 && existingData.hours < 3) {
+            blockColor = '#1f4d42';
+        } else if (existingData.hours >= 3 && existingData.hours < 6) {
+            blockColor = '#2ea082';
+        } else if (existingData.hours >= 6) {
+            blockColor = COLORS.accent;
         }
+
+        const isSelected = selectedDate && existingData.date === selectedDate;
 
         return {
             id: index,
             dayLabel: day,
             color: blockColor,
-            hours: existingData.hours, // for potential tooltip
+            hours: existingData.hours,
+            date: existingData.date,
+            isSelected
         };
     });
 
     return (
         <View style={styles.container}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+            <View style={styles.content}>
                 {blocks.map((block) => (
-                    <View key={block.id} style={styles.dayContainer}>
-                        <Text style={styles.dayText}>{block.dayLabel}</Text>
-                        <View style={[styles.block, { backgroundColor: block.color }]} />
-                    </View>
+                    <AnimatedDayBlock key={block.id} block={block} onSelectDay={onSelectDay} />
                 ))}
-            </ScrollView>
+            </View>
         </View>
     );
 };
-
-const styles = StyleSheet.create({
-    container: {
-        backgroundColor: 'rgba(255, 255, 255, 0.05)',
-        borderRadius: 24,
-        padding: 24,
-        marginBottom: 20,
-        borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.08)',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.15,
-        shadowRadius: 12,
-        elevation: 5,
-    },
-    title: {
-        fontSize: 18,
-        fontWeight: '800',
-        color: COLORS.text,
-        letterSpacing: 0.2,
-    },
-    divider: {
-        height: 1,
-        backgroundColor: 'rgba(255, 255, 255, 0.06)',
-        marginVertical: 20,
-    },
-    scrollContent: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        flex: 1,
-    },
-    dayContainer: {
-        alignItems: 'center',
-        marginHorizontal: 8,
-    },
-    dayText: {
-        fontSize: 11,
-        color: COLORS.textMuted,
-        marginBottom: 8,
-        fontWeight: '600',
-    },
-    block: {
-        width: 32,
-        height: 32,
-        borderRadius: 6,
-    },
-});
 
 export default ActivityHeatmap;

@@ -1,7 +1,5 @@
-// API base URL - change this to your server's IP/domain
-// For Android emulator, use 10.0.2.2 instead of localhost
-// For physical device, use your computer's local IP address
-export const API_URL = 'http://192.168.31.18:5001';
+// API base URL - move to environment variables for production
+export const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.31.18:5001';
 
 // Colors
 export const COLORS = {

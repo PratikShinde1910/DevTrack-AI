@@ -1,10 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import {
     ActivityIndicator,
-    Alert,
     Modal,
     RefreshControl,
     ScrollView,
@@ -13,18 +12,22 @@ import {
     Text,
     TextInput,
     TouchableOpacity,
-    View,
+    View
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ActivityHeatmap from '../components/ActivityHeatmap';
 import TasksSection from '../components/TasksSection';
 import VoiceButton from '../components/VoiceButton';
+import WeeklyInsightsCard from '../components/WeeklyInsightsCard';
 import { useAuth } from '../context/AuthContext';
+import { useFocusTimer } from '../context/FocusTimerContext';
+import { useSnackbar } from '../context/SnackbarContext';
 import api from '../services/api';
 import { COLORS, GRADIENTS } from '../utils/constants';
 
 const DashboardScreen = ({ navigation }) => {
     const { user, logout } = useAuth();
+    const { showSnackbar } = useSnackbar();
     const insets = useSafeAreaInsets();
     const [stats, setStats] = useState({
         totalHours: 0,
@@ -37,12 +40,35 @@ const DashboardScreen = ({ navigation }) => {
     const [loading, setLoading] = useState(true);
     const [weeklyActivity, setWeeklyActivity] = useState([]);
 
+    // Insights state
+    const [insights, setInsights] = useState({ totalHours: 0, topTechnology: 'None', peakDay: 'None' });
+    const [insightsLoading, setInsightsLoading] = useState(true);
+
+    // Interactive Heatmap State
+    const [selectedDate, setSelectedDate] = useState(() => {
+        const today = new Date();
+        return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    });
+    const [selectedDayStats, setSelectedDayStats] = useState(null);
+    const [selectedDayLoading, setSelectedDayLoading] = useState(false);
+    const [selectedDayLabel, setSelectedDayLabel] = useState('Today');
+
+    // Context bindings
+    const { isActive, timeLeft, durationMins } = useFocusTimer();
+
     // Task modal state
     const [taskModalVisible, setTaskModalVisible] = useState(false);
     const [newTaskTitle, setNewTaskTitle] = useState('');
     const [taskLoading, setTaskLoading] = useState(false);
 
-    const fetchStats = async () => {
+    // Flag to prevent multiple parallel fetches
+    const isFetchingRef = useRef(false);
+    const hasInitialLoadedRef = useRef(false);
+
+    // Logout Modal State
+    const [logoutModalVisible, setLogoutModalVisible] = useState(false);
+
+    const fetchStats = useCallback(async () => {
         try {
             const response = await api.get('/progress/stats');
             setStats(response.data);
@@ -50,38 +76,99 @@ const DashboardScreen = ({ navigation }) => {
         } catch (error) {
             console.log('Error fetching stats:', error);
         }
-    };
+    }, []);
 
-    const fetchTasks = async () => {
+    const fetchSelectedDayData = useCallback(async (dateStr, label = null) => {
+        try {
+            setSelectedDayLoading(true);
+
+            // Is the selected day actually today or yesterday?
+            const today = new Date();
+            const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+            const yesterday = new Date(today);
+            yesterday.setDate(yesterday.getDate() - 1);
+            const yesterdayStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
+
+            let displayLabel = label || selectedDayLabel;
+
+            if (dateStr === todayStr) {
+                displayLabel = 'Today';
+            } else if (dateStr === yesterdayStr) {
+                displayLabel = 'Yesterday';
+            }
+
+            const response = await api.get(`/progress/day?date=${dateStr}`);
+            setSelectedDayStats(response.data);
+            setSelectedDate(dateStr);
+            setSelectedDayLabel(displayLabel);
+        } catch (error) {
+            console.error('Error fetching specific day:', error);
+        } finally {
+            setSelectedDayLoading(false);
+        }
+    }, [selectedDayLabel]);
+
+    const fetchTasks = useCallback(async () => {
         try {
             const response = await api.get('/tasks');
             setTasks(response.data);
         } catch (error) {
             console.log('Error fetching tasks:', error);
         }
-    };
+    }, []);
 
-    const fetchData = async () => {
-        setLoading(true);
-        await Promise.all([fetchStats(), fetchTasks()]);
-        setLoading(false);
-    };
+    const fetchInsights = useCallback(async () => {
+        try {
+            setInsightsLoading(true);
+            const response = await api.get('/api/insights/weekly');
+            setInsights(response.data);
+        } catch (error) {
+            console.log('Error fetching insights:', error);
+        } finally {
+            setInsightsLoading(false);
+        }
+    }, []);
+
+    const fetchData = useCallback(async (isInitial = false) => {
+        if (isFetchingRef.current) return;
+
+        try {
+            isFetchingRef.current = true;
+            if (isInitial && !hasInitialLoadedRef.current) setLoading(true);
+
+            // Parallel fetch for all dashboard components
+            await Promise.all([
+                fetchStats(),
+                fetchTasks(),
+                fetchInsights(),
+                fetchSelectedDayData(selectedDate)
+            ]);
+
+            if (isInitial) hasInitialLoadedRef.current = true;
+        } catch (error) {
+            console.log('Error in fetchData:', error);
+        } finally {
+            if (isInitial) setLoading(false);
+            isFetchingRef.current = false;
+        }
+    }, [fetchStats, fetchTasks, fetchInsights, fetchSelectedDayData, selectedDate]);
 
     useFocusEffect(
         useCallback(() => {
-            fetchData();
-        }, [])
+            fetchData(true);
+        }, [fetchData])
     );
 
     const onRefresh = async () => {
         setRefreshing(true);
-        await Promise.all([fetchStats(), fetchTasks()]);
+        await Promise.all([fetchStats(), fetchTasks(), fetchInsights()]);
         setRefreshing(false);
     };
 
     const handleAddTask = async () => {
         if (!newTaskTitle.trim()) {
-            Alert.alert('Error', 'Please enter a task title');
+            showSnackbar('Please enter a task title', 'error');
             return;
         }
 
@@ -92,7 +179,7 @@ const DashboardScreen = ({ navigation }) => {
             setNewTaskTitle('');
             setTaskModalVisible(false);
         } catch (error) {
-            Alert.alert('Error', 'Failed to add task');
+            showSnackbar('Failed to add task', 'error');
         } finally {
             setTaskLoading(false);
         }
@@ -110,7 +197,7 @@ const DashboardScreen = ({ navigation }) => {
         } catch (error) {
             // Revert on error
             fetchTasks();
-            Alert.alert('Error', 'Failed to update task');
+            showSnackbar('Failed to update task', 'error');
         }
     };
 
@@ -118,28 +205,45 @@ const DashboardScreen = ({ navigation }) => {
         try {
             const response = await api.post('/progress', data);
             fetchData();
-            Alert.alert('Success', 'Voice log saved!');
+            showSnackbar('Voice log saved!', 'success');
         } catch (error) {
-            Alert.alert('Error', 'Failed to save voice log.');
+            showSnackbar('Failed to save voice log.', 'error');
         }
     };
 
-    const handleLogout = () => {
-        Alert.alert('Logout', 'Are you sure you want to logout?', [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Logout', style: 'destructive', onPress: logout },
-        ]);
+    const getProgressTitle = (label) => {
+        if (!label) return "TODAY'S PROGRESS";
+        if (label.toUpperCase() === 'TODAY') return "TODAY'S PROGRESS";
+        if (label.toUpperCase() === 'YESTERDAY') return "YESTERDAY'S PROGRESS";
+
+        const dayMap = {
+            'Mon': 'MONDAY',
+            'Tue': 'TUESDAY',
+            'Wed': 'WEDNESDAY',
+            'Thu': 'THURSDAY',
+            'Fri': 'FRIDAY',
+            'Sat': 'SATURDAY',
+            'Sun': 'SUNDAY'
+        };
+
+        const fullDay = dayMap[label] || label.toUpperCase();
+        return `${fullDay}'S PROGRESS`;
     };
 
-    const StatChip = ({ icon, value, label, color }) => (
-        <View style={styles.statChip}>
-            <Text style={styles.statIcon}>{icon}</Text>
-            <View>
-                <Text style={styles.statValue}>{value}</Text>
-                <Text style={styles.statLabel}>{label}</Text>
-            </View>
-        </View>
-    );
+    const handleLogout = () => {
+        setLogoutModalVisible(true);
+    };
+
+    const confirmLogout = () => {
+        setLogoutModalVisible(false);
+        logout();
+    };
+
+    const formatTime = (seconds) => {
+        const mins = Math.floor(seconds / 60);
+        const secs = seconds % 60;
+        return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    };
 
     return (
         <LinearGradient colors={GRADIENTS.background} style={styles.container}>
@@ -154,59 +258,140 @@ const DashboardScreen = ({ navigation }) => {
                     </Text>
                 </View>
 
-                <TouchableOpacity onPress={handleLogout} style={styles.logoutBtn}>
-                    <Ionicons name="log-out-outline" size={24} color={COLORS.textMuted} />
-                </TouchableOpacity>
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <TouchableOpacity onPress={() => navigation.navigate('FocusTimer')} style={[styles.logoutBtn, { marginRight: 12 }]}>
+                        <Ionicons name="timer-outline" size={24} color={COLORS.primary} />
+                    </TouchableOpacity>
+
+                    <TouchableOpacity onPress={handleLogout} style={styles.logoutBtn}>
+                        <Ionicons name="log-out-outline" size={24} color={COLORS.textMuted} />
+                    </TouchableOpacity>
+                </View>
             </View>
 
-            <ScrollView
-                style={styles.scrollView}
-                contentContainerStyle={{ paddingBottom: 140 }}
-                showsVerticalScrollIndicator={false}
-                refreshControl={
-                    <RefreshControl
-                        refreshing={refreshing}
-                        onRefresh={onRefresh}
-                        tintColor={COLORS.primary}
-                    />
-                }
-            >
-                {/* 2. Weekly Activity Section */}
-                <View style={styles.sectionContainer}>
-                    <Text style={styles.sectionTitle}>Weekly Activity</Text>
-                    <ActivityHeatmap weeklyData={weeklyActivity} />
-                </View>
+            {isActive && timeLeft > 0 ? (
+                <TouchableOpacity
+                    onPress={() => navigation.navigate('FocusTimer')}
+                    activeOpacity={0.8}
+                >
+                    <LinearGradient
+                        colors={GRADIENTS.primary}
+                        style={styles.activeTimerBanner}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                    >
+                        <Ionicons name="timer" size={20} color="#fff" style={{ marginRight: 8 }} />
+                        <View style={{ flex: 1 }}>
+                            <Text style={styles.bannerTitle}>Focus session running</Text>
+                            <Text style={styles.bannerTime}>⏱ {formatTime(timeLeft)} remaining</Text>
+                        </View>
+                        <Ionicons name="chevron-forward" size={20} color="rgba(255,255,255,0.7)" />
+                    </LinearGradient>
+                </TouchableOpacity>
+            ) : null}
 
-                {/* 3. Quick Stats Row (Compact) */}
-                <View style={styles.compactStatsRow}>
-                    <StatChip icon="🔥" value={`${stats.streak} day`} label="Streak" color="#FF6B6B" />
-                    <StatChip icon="⏱" value={`${stats.totalHours} hr`} label="Total" color="#6C63FF" />
-                    <StatChip icon="✅" value={`${stats.totalProblems}`} label="Solved" color="#43E97B" />
+            {loading && !refreshing ? (
+                <View style={styles.loadingOverlay}>
+                    <ActivityIndicator size="large" color={COLORS.primary} />
+                    <Text style={styles.loadingText}>Loading dashboard...</Text>
                 </View>
-
-                {/* 4. Today's Progress Card (Simplified) */}
-                <View style={styles.progressCard}>
-                    <Text style={styles.progressTitle}>Today's Progress</Text>
-                    <View style={styles.progressStats}>
-                        <Text style={styles.progressStatText}>{stats.today.hours}h coded | {stats.today.problems} problems</Text>
+            ) : (
+                <ScrollView
+                    style={styles.scrollView}
+                    contentContainerStyle={{ paddingBottom: 140 }}
+                    showsVerticalScrollIndicator={false}
+                    refreshControl={
+                        <RefreshControl
+                            refreshing={refreshing}
+                            onRefresh={onRefresh}
+                            tintColor={COLORS.primary}
+                        />
+                    }
+                >
+                    {/* 2. Weekly Activity Section */}
+                    <View style={styles.sectionContainer}>
+                        <Text style={styles.sectionTitle}>Weekly Activity</Text>
+                        <ActivityHeatmap
+                            weeklyData={weeklyActivity}
+                            selectedDate={selectedDate}
+                            onSelectDay={(dateStr, label) => fetchSelectedDayData(dateStr, label)}
+                        />
                     </View>
-                    {stats.today.techLearned ? (
-                        <Text style={styles.techText}>
-                            Technology: <Text style={styles.techValue}>{stats.today.techLearned}</Text>
+
+                    {/* 3. Today's Progress Card (Hero) dynamically updated per day */}
+                    <View style={[styles.progressCard, styles.heroCard]}>
+                        <Text style={styles.progressTitle}>
+                            {getProgressTitle(selectedDayLabel)}
                         </Text>
-                    ) : null}
-                </View>
 
-                {/* 5. Today's Tasks Card (Expandable) */}
-                <TasksSection
-                    tasks={tasks}
-                    onToggle={handleToggleTask}
-                    onAdd={() => setTaskModalVisible(true)}
-                    loading={taskLoading}
-                />
+                        {selectedDayLoading ? (
+                            <ActivityIndicator color={COLORS.primary} style={{ marginVertical: 20 }} />
+                        ) : selectedDayStats && selectedDayStats.hoursCoded === 0 && selectedDayStats.problemsSolved === 0 ? (
+                            <Text style={styles.heroNoActivity}>No activity logged on this day.</Text>
+                        ) : (
+                            <>
+                                <View style={styles.progressStats}>
+                                    <Text style={styles.heroMainStat}>
+                                        {selectedDayStats ? selectedDayStats.hoursCoded : stats.today.hours}h coded |{' '}
+                                        {selectedDayStats ? selectedDayStats.problemsSolved : stats.today.problems} problems
+                                    </Text>
+                                </View>
 
-                <View style={{ height: 120 }} />
-            </ScrollView>
+                                {(selectedDayStats?.technologies?.length > 0 || stats.today.techLearned) ? (
+                                    <Text style={styles.techText}>
+                                        Technology: <Text style={styles.techValue}>
+                                            {selectedDayStats
+                                                ? selectedDayStats.technologies.join(', ')
+                                                : stats.today.techLearned
+                                            }
+                                        </Text>
+                                    </Text>
+                                ) : null}
+                            </>
+                        )}
+
+                        <View style={styles.heroDivider} />
+
+                        <View style={styles.heroSubStatsRow}>
+                            <Text style={styles.heroSubStatText}>
+                                🔥 Streak: <Text style={styles.heroSubStatValue}>
+                                    {selectedDayStats ? selectedDayStats.streakUpToDate : stats.streak} {
+                                        (selectedDayStats ? selectedDayStats.streakUpToDate : stats.streak) === 1 ? 'day' : 'days'
+                                    }
+                                </Text>
+                            </Text>
+                            <Text style={styles.heroSubStatText}>
+                                ⏱ Total this week: <Text style={styles.heroSubStatValue}>
+                                    {selectedDayStats ? selectedDayStats.totalWeekHours : stats.totalHours} hr
+                                </Text>
+                            </Text>
+                            <Text style={styles.heroSubStatText}>
+                                ✅ Problems solved: <Text style={styles.heroSubStatValue}>
+                                    {selectedDayStats ? selectedDayStats.cumulativeProblemsSolved : stats.totalProblems}
+                                </Text>
+                            </Text>
+                        </View>
+                    </View>
+
+                    {/* 5. Today's Tasks Card (Expandable) */}
+                    <TasksSection
+                        tasks={tasks}
+                        onToggle={handleToggleTask}
+                        onAdd={() => setTaskModalVisible(true)}
+                        loading={taskLoading}
+                    />
+
+                    {/* 6. Weekly Coding Insights */}
+                    <WeeklyInsightsCard
+                        totalHours={insights.totalHours}
+                        topTechnology={insights.topTechnology}
+                        peakDay={insights.peakDay}
+                        loading={insightsLoading}
+                    />
+
+                    <View style={{ height: 120 }} />
+                </ScrollView>
+            )}
 
             {/* Add Task Modal */}
             <Modal
@@ -243,6 +428,37 @@ const DashboardScreen = ({ navigation }) => {
                                 ) : (
                                     <Text style={styles.saveBtnText}>Save</Text>
                                 )}
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+
+            {/* Logout Confirmation Modal */}
+            <Modal
+                visible={logoutModalVisible}
+                transparent={true}
+                animationType="fade"
+                onRequestClose={() => setLogoutModalVisible(false)}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalContent}>
+                        <Text style={styles.modalTitle}>Confirm Logout</Text>
+                        <Text style={{ fontSize: 16, color: COLORS.textSecondary, marginBottom: 24, lineHeight: 24 }}>
+                            Are you sure you want to log out of your account?
+                        </Text>
+                        <View style={styles.modalActions}>
+                            <TouchableOpacity
+                                onPress={() => setLogoutModalVisible(false)}
+                                style={[styles.modalBtn, styles.cancelBtn]}
+                            >
+                                <Text style={styles.cancelBtnText}>Cancel</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                onPress={confirmLogout}
+                                style={[styles.modalBtn, { backgroundColor: 'rgba(255, 69, 58, 0.2)' }]}
+                            >
+                                <Text style={[styles.saveBtnText, { color: '#FF453A' }]}>Logout</Text>
                             </TouchableOpacity>
                         </View>
                     </View>
@@ -314,37 +530,29 @@ const styles = StyleSheet.create({
         marginBottom: 12,
         paddingLeft: 4,
     },
-    compactStatsRow: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        marginBottom: 24,
-    },
-    statChip: {
-        flex: 1,
+    activeTimerBanner: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: COLORS.darkLight,
-        paddingVertical: 10,
-        paddingHorizontal: 10,
+        marginHorizontal: 16,
+        marginBottom: 16,
+        padding: 14,
         borderRadius: 12,
-        marginHorizontal: 4,
-        borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.05)',
+        shadowColor: COLORS.primary,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+        elevation: 6,
     },
-    statIcon: {
-        fontSize: 16,
-        marginRight: 6,
+    bannerTitle: {
+        fontSize: 14,
+        fontWeight: '700',
+        color: '#fff',
     },
-    statValue: {
-        fontSize: 13,
-        fontWeight: '800',
-        color: COLORS.text,
-    },
-    statLabel: {
-        fontSize: 9,
-        color: COLORS.textMuted,
+    bannerTime: {
+        fontSize: 12,
+        color: 'rgba(255,255,255,0.9)',
+        marginTop: 2,
         fontWeight: '600',
-        textTransform: 'uppercase',
     },
     progressCard: {
         backgroundColor: COLORS.darkLight,
@@ -354,25 +562,63 @@ const styles = StyleSheet.create({
         borderWidth: 1,
         borderColor: 'rgba(255, 255, 255, 0.08)',
     },
-    progressTitle: {
-        fontSize: 16,
-        fontWeight: '800',
-        color: COLORS.text,
-        marginBottom: 8,
+    heroCard: {
+        paddingVertical: 22,
+        backgroundColor: 'rgba(30,30,40,0.8)',
+        borderColor: 'rgba(67, 233, 123, 0.3)',
+        borderWidth: 1,
+        shadowColor: '#43E97B',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.1,
+        shadowRadius: 10,
+        elevation: 4,
     },
-    progressStatText: {
+    progressTitle: {
         fontSize: 14,
-        color: COLORS.textSecondary,
-        fontWeight: '600',
+        fontWeight: '800',
+        color: COLORS.primary,
+        marginBottom: 12,
+        letterSpacing: 1,
+    },
+    heroMainStat: {
+        fontSize: 24,
+        color: '#fff',
+        fontWeight: '900',
+        marginBottom: 4,
+    },
+    heroNoActivity: {
+        fontSize: 15,
+        color: COLORS.textMuted,
+        fontStyle: 'italic',
+        marginVertical: 12,
     },
     techText: {
-        marginTop: 10,
-        fontSize: 13,
+        marginTop: 6,
+        fontSize: 14,
         color: COLORS.textMuted,
     },
     techValue: {
-        color: COLORS.accent,
+        color: '#fff',
         fontWeight: '700',
+    },
+    heroDivider: {
+        height: 1,
+        backgroundColor: 'rgba(255, 255, 255, 0.1)',
+        marginVertical: 16,
+    },
+    heroSubStatsRow: {
+        flexDirection: 'column',
+        gap: 10,
+    },
+    heroSubStatText: {
+        fontSize: 14,
+        color: COLORS.textSecondary,
+        fontWeight: '600',
+        marginBottom: 8,
+    },
+    heroSubStatValue: {
+        color: '#fff',
+        fontWeight: '800',
     },
     modalOverlay: {
         flex: 1,
@@ -446,6 +692,17 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.4,
         shadowRadius: 8,
         elevation: 5,
+    },
+    loadingOverlay: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    loadingText: {
+        marginTop: 12,
+        color: COLORS.textSecondary,
+        fontSize: 14,
+        fontWeight: '600',
     },
 });
 

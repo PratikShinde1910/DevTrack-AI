@@ -1,3 +1,4 @@
+import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useState } from 'react';
 import {
@@ -20,6 +21,7 @@ const RegisterScreen = ({ navigation }) => {
     const [name, setName] = useState('');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
+    const [showPassword, setShowPassword] = useState(false);
     const [loading, setLoading] = useState(false);
     const { register } = useAuth();
 
@@ -95,14 +97,27 @@ const RegisterScreen = ({ navigation }) => {
 
                             <View style={styles.inputContainer}>
                                 <Text style={styles.inputLabel}>Password</Text>
-                                <TextInput
-                                    style={styles.input}
-                                    placeholder="Min 6 characters"
-                                    placeholderTextColor={COLORS.textMuted}
-                                    value={password}
-                                    onChangeText={setPassword}
-                                    secureTextEntry
-                                />
+                                <View style={styles.passwordContainer}>
+                                    <TextInput
+                                        style={[styles.input, styles.passwordInput]}
+                                        placeholder="Min 6 characters"
+                                        placeholderTextColor={COLORS.textMuted}
+                                        value={password}
+                                        onChangeText={setPassword}
+                                        secureTextEntry={!showPassword}
+                                    />
+                                    <TouchableOpacity
+                                        style={styles.visibilityToggle}
+                                        onPress={() => setShowPassword(!showPassword)}
+                                        activeOpacity={0.7}
+                                    >
+                                        <Ionicons
+                                            name={showPassword ? "eye-off" : "eye"}
+                                            size={22}
+                                            color={COLORS.textMuted}
+                                        />
+                                    </TouchableOpacity>
+                                </View>
                             </View>
 
                             <TouchableOpacity
@@ -208,6 +223,19 @@ const styles = StyleSheet.create({
         paddingVertical: 14,
         color: COLORS.text,
         fontSize: 15,
+    },
+    passwordContainer: {
+        position: 'relative',
+        justifyContent: 'center',
+    },
+    passwordInput: {
+        paddingRight: 50,
+    },
+    visibilityToggle: {
+        position: 'absolute',
+        right: 16,
+        height: '100%',
+        justifyContent: 'center',
     },
     registerButton: {
         borderRadius: 12,

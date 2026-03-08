@@ -2,7 +2,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useEffect, useState } from 'react';
 import {
     ActivityIndicator,
-    Alert,
     KeyboardAvoidingView,
     Platform,
     ScrollView,
@@ -11,16 +10,19 @@ import {
     Text,
     TextInput,
     TouchableOpacity,
-    View,
+    View
 } from 'react-native';
+import { useSnackbar } from '../context/SnackbarContext';
 import api from '../services/api';
 import { COLORS, GRADIENTS } from '../utils/constants';
 
 const AddProgressScreen = ({ navigation, route }) => {
+    const { showSnackbar } = useSnackbar();
     const [hours, setHours] = useState('');
     const [problemsSolved, setProblemsSolved] = useState('');
-    const [techLearned, setTechLearned] = useState('');
-    const [notes, setNotes] = useState('');
+    const [techStack, setTechStack] = useState([]);
+    const [techInput, setTechInput] = useState('');
+    const [devLog, setDevLog] = useState('');
     const [loading, setLoading] = useState(false);
     const [projects, setProjects] = useState([]);
     const [selectedProjectId, setSelectedProjectId] = useState(null);
@@ -31,11 +33,26 @@ const AddProgressScreen = ({ navigation, route }) => {
         if (editEntry) {
             setHours(editEntry.hours?.toString() || '');
             setProblemsSolved(editEntry.problemsSolved?.toString() || '');
-            setTechLearned(editEntry.techLearned || '');
-            setNotes(editEntry.notes || '');
+            // Convert to array if it was stored as string previously
+            const tech = editEntry.techLearned;
+            setTechStack(Array.isArray(tech) ? tech : (tech ? tech.split(',').map(t => t.trim()) : []));
+            setDevLog(editEntry.devLog || '');
             setSelectedProjectId(editEntry.projectId);
         }
     }, [editEntry]);
+
+    const addTech = () => {
+        if (techInput.trim()) {
+            if (!techStack.includes(techInput.trim())) {
+                setTechStack([...techStack, techInput.trim()]);
+            }
+            setTechInput('');
+        }
+    };
+
+    const removeTech = (tech) => {
+        setTechStack(techStack.filter(t => t !== tech));
+    };
 
     useEffect(() => {
         const fetchProjects = async () => {
@@ -51,13 +68,13 @@ const AddProgressScreen = ({ navigation, route }) => {
 
     const handleSave = async () => {
         if (!hours.trim()) {
-            Alert.alert('Error', 'Please enter hours coded');
+            showSnackbar('Please enter hours coded', 'error');
             return;
         }
 
         const hoursNum = parseFloat(hours);
         if (isNaN(hoursNum) || hoursNum < 0 || hoursNum > 24) {
-            Alert.alert('Error', 'Hours must be a number between 0 and 24');
+            showSnackbar('Hours must be a number between 0 and 24', 'error');
             return;
         }
 
@@ -68,8 +85,8 @@ const AddProgressScreen = ({ navigation, route }) => {
             const progressData = {
                 hours: hoursNum,
                 problemsSolved: problemsNum,
-                techLearned: techLearned.trim(),
-                notes: notes.trim(),
+                techLearned: techStack, // Sending as array
+                devLog: devLog.trim(),
                 projectId: selectedProjectId,
             };
 
@@ -79,14 +96,10 @@ const AddProgressScreen = ({ navigation, route }) => {
                 await api.post('/progress', progressData);
             }
 
-            Alert.alert('Success', editEntry ? 'Progress updated!' : 'Progress saved!', [
-                { text: 'OK', onPress: () => navigation.goBack() },
-            ]);
+            showSnackbar(editEntry ? 'Progress updated!' : 'Progress saved!', 'success');
+            navigation.goBack();
         } catch (error) {
-            Alert.alert(
-                'Error',
-                error.response?.data?.message || 'Failed to save progress'
-            );
+            showSnackbar(error.response?.data?.message || 'Failed to save progress', 'error');
         } finally {
             setLoading(false);
         }
@@ -171,25 +184,57 @@ const AddProgressScreen = ({ navigation, route }) => {
 
                         <View style={styles.inputGroup}>
                             <Text style={styles.inputLabel}>💻 Technology Learned</Text>
-                            <TextInput
-                                style={styles.input}
-                                placeholder="e.g., React Native"
-                                placeholderTextColor={COLORS.textMuted}
-                                value={techLearned}
-                                onChangeText={setTechLearned}
-                            />
+                            <View style={styles.techInputContainer}>
+                                <TextInput
+                                    style={[styles.input, { flex: 1, borderTopRightRadius: 0, borderBottomRightRadius: 0 }]}
+                                    placeholderTextColor={COLORS.textMuted}
+                                    placeholder="e.g. React Native"
+                                    value={techInput}
+                                    onChangeText={setTechInput}
+                                    onSubmitEditing={addTech}
+                                />
+                                <TouchableOpacity onPress={addTech} style={styles.addTechBtn}>
+                                    <LinearGradient
+                                        colors={GRADIENTS.primary}
+                                        style={styles.addTechGradient}
+                                        start={{ x: 0, y: 0 }}
+                                        end={{ x: 1, y: 1 }}
+                                    >
+                                        <Text style={styles.addTechText}>+</Text>
+                                    </LinearGradient>
+                                </TouchableOpacity>
+                            </View>
+                            {techStack.length > 0 && (
+                                <View style={styles.chipsContainer}>
+                                    {techStack.map((tech, index) => (
+                                        <TouchableOpacity
+                                            key={index}
+                                            style={styles.chip}
+                                            onPress={() => removeTech(tech)}
+                                        >
+                                            <LinearGradient
+                                                colors={['rgba(108, 99, 255, 0.2)', 'rgba(90, 82, 213, 0.1)']}
+                                                style={styles.chipGradient}
+                                            >
+                                                <Text style={styles.chipText}>{tech}</Text>
+                                                <Text style={styles.chipClose}>✕</Text>
+                                            </LinearGradient>
+                                        </TouchableOpacity>
+                                    ))}
+                                </View>
+                            )}
                         </View>
 
                         <View style={styles.inputGroup}>
-                            <Text style={styles.inputLabel}>📋 Notes</Text>
+                            <Text style={styles.inputLabel}>📝 What did you code today? (Dev Log)</Text>
                             <TextInput
                                 style={[styles.input, styles.textArea]}
-                                placeholder="What did you work on?"
+                                placeholder="e.g. Built Pomodoro timer and fixed API bug"
                                 placeholderTextColor={COLORS.textMuted}
-                                value={notes}
-                                onChangeText={setNotes}
+                                value={devLog}
+                                onChangeText={setDevLog}
                                 multiline
-                                numberOfLines={4}
+                                numberOfLines={3}
                                 textAlignVertical="top"
                             />
                         </View>
@@ -282,6 +327,15 @@ const styles = StyleSheet.create({
         color: COLORS.text,
         fontSize: 15,
     },
+    techInputContainer: { flexDirection: 'row', alignItems: 'center' },
+    addTechBtn: { height: 48, width: 48, marginLeft: -1 },
+    addTechGradient: { flex: 1, borderTopRightRadius: 12, borderBottomRightRadius: 12, justifyContent: 'center', alignItems: 'center' },
+    addTechText: { color: COLORS.text, fontSize: 24, fontWeight: '300' },
+    chipsContainer: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 12 },
+    chip: { marginRight: 8, marginBottom: 8, borderRadius: 8, overflow: 'hidden' },
+    chipGradient: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, borderColor: 'rgba(108, 99, 255, 0.3)', borderRadius: 8 },
+    chipText: { color: COLORS.text, fontSize: 12, fontWeight: '600' },
+    chipClose: { color: COLORS.textMuted, fontSize: 12, marginLeft: 8, fontWeight: 'bold' },
     textArea: {
         minHeight: 100,
     },
