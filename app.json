@@ -4,12 +4,13 @@
     "slug": "DevTrack-AI",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/icon.png",
     "scheme": "devtrackai",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
+      "icon": "./assets/icon.png",
       "infoPlist": {
         "NSSpeechRecognitionUsageDescription": "Allow DevTrack AI to securely recognize your speech.",
         "NSMicrophoneUsageDescription": "Allow DevTrack AI to access the microphone to record your voice logs."
@@ -19,9 +20,7 @@
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#0A0E21",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "foregroundImage": "./assets/adaptive-icon.png"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
@@ -39,7 +38,7 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/splash-icon.png",
+          "image": "./assets/icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#0A0E21",
@@ -67,6 +66,12 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "736f8ce2-6309-4942-9855-d4a823398d84"
+      }
     }
   }
 }

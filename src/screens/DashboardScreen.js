@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
     ActivityIndicator,
     Modal,
@@ -26,9 +26,10 @@ import api from '../services/api';
 import { COLORS, GRADIENTS } from '../utils/constants';
 
 const DashboardScreen = ({ navigation }) => {
-    const { user, logout } = useAuth();
+    const { user, logout, token, loading: authLoading } = useAuth();
     const { showSnackbar } = useSnackbar();
     const insets = useSafeAreaInsets();
+
     const [stats, setStats] = useState({
         totalHours: 0,
         totalProblems: 0,
@@ -78,9 +79,9 @@ const DashboardScreen = ({ navigation }) => {
         }
     }, []);
 
-    const fetchSelectedDayData = useCallback(async (dateStr, label = null) => {
+    const fetchSelectedDayData = useCallback(async (dateStr, label = null, silent = false) => {
         try {
-            setSelectedDayLoading(true);
+            if (!silent) setSelectedDayLoading(true);
 
             // Is the selected day actually today or yesterday?
             const today = new Date();
@@ -105,7 +106,7 @@ const DashboardScreen = ({ navigation }) => {
         } catch (error) {
             console.error('Error fetching specific day:', error);
         } finally {
-            setSelectedDayLoading(false);
+            if (!silent) setSelectedDayLoading(false);
         }
     }, [selectedDayLabel]);
 
@@ -118,47 +119,89 @@ const DashboardScreen = ({ navigation }) => {
         }
     }, []);
 
-    const fetchInsights = useCallback(async () => {
+    const fetchInsights = useCallback(async (silent = false) => {
         try {
-            setInsightsLoading(true);
+            if (!silent) setInsightsLoading(true);
             const response = await api.get('/api/insights/weekly');
             setInsights(response.data);
         } catch (error) {
             console.log('Error fetching insights:', error);
         } finally {
-            setInsightsLoading(false);
+            if (!silent) setInsightsLoading(false);
         }
     }, []);
 
-    const fetchData = useCallback(async (isInitial = false) => {
-        if (isFetchingRef.current) return;
+    const fetchData = useCallback(async (isInitial = false, isRetry = false) => {
+        // Prevent fetching if auth is not ready
+        if (authLoading || !token) {
+            if (isInitial && loading) setLoading(false);
+            return;
+        }
+
+        if (isFetchingRef.current) {
+            return;
+        }
+
+        const isSilent = isInitial && hasInitialLoadedRef.current;
 
         try {
             isFetchingRef.current = true;
-            if (isInitial && !hasInitialLoadedRef.current) setLoading(true);
+
+            // Only show full-screen loader on absolute first load (before hasInitialLoadedRef is true)
+            if (isInitial && !hasInitialLoadedRef.current) {
+                setLoading(true);
+                // 500ms initial delay ONLY on absolute first launch/login for stability
+                if (!isRetry) {
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                }
+            }
 
             // Parallel fetch for all dashboard components
             await Promise.all([
                 fetchStats(),
                 fetchTasks(),
-                fetchInsights(),
-                fetchSelectedDayData(selectedDate)
+                fetchInsights(isSilent),
+                fetchSelectedDayData(selectedDate, null, isSilent)
             ]);
 
             if (isInitial) hasInitialLoadedRef.current = true;
+
+            // Check if stats are still empty (possible race or empty data)
+            if (isInitial && !isRetry && stats.totalHours === 0 && stats.streak === 0) {
+                setTimeout(() => {
+                    isFetchingRef.current = false;
+                    fetchData(true, true);
+                }, 1000);
+            }
         } catch (error) {
             console.log('Error in fetchData:', error);
+            // Simple retry once on absolute failure
+            if (!isRetry) {
+                setTimeout(() => {
+                    isFetchingRef.current = false;
+                    fetchData(true, true);
+                }, 1000);
+            }
         } finally {
-            if (isInitial) setLoading(false);
+            setLoading(false);
             isFetchingRef.current = false;
         }
-    }, [fetchStats, fetchTasks, fetchInsights, fetchSelectedDayData, selectedDate]);
+    }, [authLoading, token, fetchStats, fetchTasks, fetchInsights, fetchSelectedDayData, selectedDate, loading, stats.totalHours, stats.streak]);
 
+    // Initial load and focus-based refresh
     useFocusEffect(
         useCallback(() => {
             fetchData(true);
         }, [fetchData])
     );
+
+    // Step 2 & 5: Ensure fetch runs when auth state becomes ready
+    // This acts as a secondary trigger in case useFocusEffect missed the window
+    useEffect(() => {
+        if (!authLoading && token && !hasInitialLoadedRef.current) {
+            fetchData(true);
+        }
+    }, [authLoading, token, fetchData]);
 
     const onRefresh = async () => {
         setRefreshing(true);
@@ -319,59 +362,73 @@ const DashboardScreen = ({ navigation }) => {
                     </View>
 
                     {/* 3. Today's Progress Card (Hero) dynamically updated per day */}
-                    <View style={[styles.progressCard, styles.heroCard]}>
-                        <Text style={styles.progressTitle}>
-                            {getProgressTitle(selectedDayLabel)}
-                        </Text>
+                    {
+                        (() => {
+                            const isToday = selectedDayLabel === 'Today';
 
-                        {selectedDayLoading ? (
-                            <ActivityIndicator color={COLORS.primary} style={{ marginVertical: 20 }} />
-                        ) : selectedDayStats && selectedDayStats.hoursCoded === 0 && selectedDayStats.problemsSolved === 0 ? (
-                            <Text style={styles.heroNoActivity}>No activity logged on this day.</Text>
-                        ) : (
-                            <>
-                                <View style={styles.progressStats}>
-                                    <Text style={styles.heroMainStat}>
-                                        {selectedDayStats ? selectedDayStats.hoursCoded : stats.today.hours}h coded |{' '}
-                                        {selectedDayStats ? selectedDayStats.problemsSolved : stats.today.problems} problems
-                                    </Text>
-                                </View>
+                            // Derive stats for display to ensure consistency
+                            const displayStats = {
+                                title: getProgressTitle(selectedDayLabel),
+                                hours: selectedDayStats ? selectedDayStats.hoursCoded : stats.today.hours,
+                                problems: selectedDayStats ? selectedDayStats.problemsSolved : stats.today.problems,
+                                tech: selectedDayStats
+                                    ? (selectedDayStats.technologies || []).join(', ')
+                                    : stats.today.techLearned,
+                                streak: selectedDayStats ? selectedDayStats.streakUpToDate : stats.streak,
+                                weekHours: selectedDayStats ? selectedDayStats.totalWeekHours : (stats.weeklyActivity || []).reduce((sum, d) => sum + (d.hours || 0), 0),
+                                totalProblems: selectedDayStats ? selectedDayStats.cumulativeProblemsSolved : stats.totalProblems,
+                                hasActivity: selectedDayStats
+                                    ? (selectedDayStats.hoursCoded > 0 || selectedDayStats.problemsSolved > 0)
+                                    : (stats.today.hours > 0 || stats.today.problems > 0)
+                            };
 
-                                {(selectedDayStats?.technologies?.length > 0 || stats.today.techLearned) ? (
-                                    <Text style={styles.techText}>
-                                        Technology: <Text style={styles.techValue}>
-                                            {selectedDayStats
-                                                ? selectedDayStats.technologies.join(', ')
-                                                : stats.today.techLearned
-                                            }
+                            return (
+                                <View style={[styles.progressCard, styles.heroCard]}>
+                                    <Text style={styles.progressTitle}>{displayStats.title}</Text>
+
+                                    {selectedDayLoading ? (
+                                        <ActivityIndicator color={COLORS.primary} style={{ marginVertical: 20 }} />
+                                    ) : !displayStats.hasActivity ? (
+                                        <Text style={styles.heroNoActivity}>No activity logged on this day.</Text>
+                                    ) : (
+                                        <>
+                                            <View style={styles.progressStats}>
+                                                <Text style={styles.heroMainStat}>
+                                                    {displayStats.hours}h coded | {displayStats.problems} problems
+                                                </Text>
+                                            </View>
+
+                                            {displayStats.tech ? (
+                                                <Text style={styles.techText}>
+                                                    Technology: <Text style={styles.techValue}>{displayStats.tech}</Text>
+                                                </Text>
+                                            ) : null}
+                                        </>
+                                    )}
+
+                                    <View style={styles.heroDivider} />
+
+                                    <View style={styles.heroSubStatsRow}>
+                                        <Text style={styles.heroSubStatText}>
+                                            🔥 Streak: <Text style={styles.heroSubStatValue}>
+                                                {displayStats.streak} {displayStats.streak === 1 ? 'day' : 'days'}
+                                            </Text>
                                         </Text>
-                                    </Text>
-                                ) : null}
-                            </>
-                        )}
-
-                        <View style={styles.heroDivider} />
-
-                        <View style={styles.heroSubStatsRow}>
-                            <Text style={styles.heroSubStatText}>
-                                🔥 Streak: <Text style={styles.heroSubStatValue}>
-                                    {selectedDayStats ? selectedDayStats.streakUpToDate : stats.streak} {
-                                        (selectedDayStats ? selectedDayStats.streakUpToDate : stats.streak) === 1 ? 'day' : 'days'
-                                    }
-                                </Text>
-                            </Text>
-                            <Text style={styles.heroSubStatText}>
-                                ⏱ Total this week: <Text style={styles.heroSubStatValue}>
-                                    {selectedDayStats ? selectedDayStats.totalWeekHours : stats.totalHours} hr
-                                </Text>
-                            </Text>
-                            <Text style={styles.heroSubStatText}>
-                                ✅ Problems solved: <Text style={styles.heroSubStatValue}>
-                                    {selectedDayStats ? selectedDayStats.cumulativeProblemsSolved : stats.totalProblems}
-                                </Text>
-                            </Text>
-                        </View>
-                    </View>
+                                        <Text style={styles.heroSubStatText}>
+                                            ⏱ Total this week: <Text style={styles.heroSubStatValue}>
+                                                {Math.round(displayStats.weekHours * 10) / 10} hr
+                                            </Text>
+                                        </Text>
+                                        <Text style={styles.heroSubStatText}>
+                                            ✅ Problems solved: <Text style={styles.heroSubStatValue}>
+                                                {displayStats.totalProblems}
+                                            </Text>
+                                        </Text>
+                                    </View>
+                                </View>
+                            );
+                        })()
+                    }
 
                     {/* 5. Today's Tasks Card (Expandable) */}
                     <TasksSection
